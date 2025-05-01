@@ -4,7 +4,6 @@ import { MCPClient } from "./client.js";
 import { createStdioTransport } from "./transport-stdio.js";
 import fetch from "node-fetch";
 import open from "open";
-import { URL } from "url";
 
 const args = process.argv.slice(2);
 if (args.length !== 1) {
@@ -15,16 +14,13 @@ if (args.length !== 1) {
 const remoteSseUrl = args[0];
 const localTransport = createStdioTransport();
 
-async function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+const MAX_RETRIES = 5;
+const RETRY_INTERVAL_MS = 3000;
 
-async function connectWithOAuthRetry() {
-  const maxRetries = 5;
-  let redirectedUrl = null;
-  let attempt = 0;
+let didOpenBrowser = false;
 
-  while (attempt < maxRetries) {
+async function tryConnectWithRetry() {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const remoteTransport = await MCPClient.connect(remoteSseUrl, {
         fetch: async (url, options) => {
@@ -33,14 +29,22 @@ async function connectWithOAuthRetry() {
             redirect: "manual",
           });
 
-          if ([302, 303, 307].includes(response.status)) {
-            const locationHeader = response.headers.get("location");
-            if (locationHeader) {
-              redirectedUrl = new URL(locationHeader, url).toString();
-              console.log(`Detected OAuth redirect to: ${redirectedUrl}`);
-              if (attempt === 0) await open(redirectedUrl);
-              throw new Error("OAuth redirect triggered");
+          if (
+            response.status === 302 ||
+            response.status === 303 ||
+            response.status === 307
+          ) {
+            const redirectUrl = response.headers.get("location");
+            if (redirectUrl) {
+              console.error(`Detected OAuth redirect to: ${redirectUrl}`);
+              if (!didOpenBrowser) {
+                await open(redirectUrl);
+                didOpenBrowser = true;
+              }
+            } else {
+              console.error("Redirect detected but no location header found.");
             }
+            throw new Error("OAuth redirect triggered");
           }
 
           return response;
@@ -48,29 +52,23 @@ async function connectWithOAuthRetry() {
         headers: {},
       });
 
+      // Pipe STDIO <-> Remote MCP server
       localTransport.pipe(remoteTransport);
       remoteTransport.pipe(localTransport);
-      return; // successful, exit loop
+      return; // success
     } catch (err) {
-      if (err.message.includes("OAuth redirect triggered")) {
-        attempt++;
-        const waitMs = 3000 + attempt * 2000; // 3s, 5s, 7s...
-        console.log(`Waiting ${waitMs / 1000}s for user to complete login... [Attempt ${attempt}/${maxRetries}]`);
-        await delay(waitMs);
-        continue;
+      if (attempt < MAX_RETRIES) {
+        const waitTime = RETRY_INTERVAL_MS * attempt;
+        console.error(
+          `Waiting ${waitTime / 1000}s before retry (${attempt}/${MAX_RETRIES})...`
+        );
+        await new Promise((r) => setTimeout(r, waitTime));
       } else {
-        console.error("Connection failed:", err.message);
-        return;
+        console.error("Failed to connect after 5 attempts. Please complete login in the browser and try again.");
       }
     }
   }
-
-  console.error(`Failed to connect after ${maxRetries} attempts. Please complete login in the browser and try again.`);
 }
 
-try {
-  await connectWithOAuthRetry();
-} catch (err) {
-  console.error("Fatal error:", err.message);
-}
+tryConnectWithRetry();
 
