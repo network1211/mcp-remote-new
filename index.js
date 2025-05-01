@@ -3,7 +3,8 @@
 import { MCPClient } from "./client.js";
 import { createStdioTransport } from "./transport-stdio.js";
 import fetch from "node-fetch";
-import open from "open"; // <== Add this
+import open from "open";
+import { URL } from "url"; // Needed to resolve relative URLs
 
 const args = process.argv.slice(2);
 if (args.length !== 1) {
@@ -19,14 +20,15 @@ try {
     fetch: async (url, options) => {
       const response = await fetch(url, {
         ...options,
-        redirect: "manual", // <== Detect redirect manually
+        redirect: "manual", // Detect redirect manually
       });
 
-      if (response.status === 302 || response.status === 303 || response.status === 307) {
-        const redirectUrl = response.headers.get("location");
-        if (redirectUrl) {
-          console.log(`Detected OAuth redirect to: ${redirectUrl}`);
-          await open(redirectUrl); // <== This opens the browser
+      if ([302, 303, 307].includes(response.status)) {
+        const locationHeader = response.headers.get("location");
+        if (locationHeader) {
+          const absoluteUrl = new URL(locationHeader, url).toString();
+          console.log(`Detected OAuth redirect to: ${absoluteUrl}`);
+          await open(absoluteUrl);
         } else {
           console.error("Redirect detected but no location header found.");
         }
@@ -35,7 +37,7 @@ try {
 
       return response;
     },
-    headers: {}, // No Authorization header needed (proxy handles it)
+    headers: {}, // Leave empty; proxy handles Authorization
   });
 
   localTransport.pipe(remoteTransport);
