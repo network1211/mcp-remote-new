@@ -1,23 +1,13 @@
 {
-  "name": "new-mcp-remote",
+  "name": "mcp-remote-oauth-test",
   "version": "1.0.0",
   "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
-  "dependencies": {
-    "node-fetch": "^3.3.2"
-  },
-  "type": "module",
   "bin": {
-    "new-mcp-remote": "./index.js"
+    "mcp-remote-oauth-test": "./index.js"
   },
-  "devDependencies": {
-    "@types/node": "^22.15.3",
-    "typescript": "^5.8.3"
-  }
+  "dependencies": {
+    "node-fetch": "^3.3.2",
+    "open": "^10.1.1"
+  },
+  "type": "module"
 }
